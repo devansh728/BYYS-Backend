@@ -1,0 +1,97 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.4'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'checkstyle'
+	id 'com.github.spotbugs' version '6.0.26'
+	id 'org.owasp.dependencycheck' version '10.0.4'
+}
+
+group = 'com.byys'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-cache'
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// Database and migrations
+	runtimeOnly 'org.postgresql:postgresql:42.7.4'
+	implementation 'org.flywaydb:flyway-core'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+
+	// JWT
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+	// Swagger/OpenAPI
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+
+	// Metrics
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+
+	// SMS (Twilio)
+	implementation 'com.twilio.sdk:twilio:10.5.0'
+
+	// Cache provider (Caffeine)
+	implementation 'com.github.ben-manes.caffeine:caffeine:3.2.0'
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.security:spring-security-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+checkstyle {
+	toolVersion = '10.17.0'
+	configDirectory = file("${rootDir}/config/checkstyle")
+}
+
+tasks.withType(Checkstyle) {
+	reports {
+		xml.required = false
+		html.required = true
+	}
+}
+
+spotbugs {
+	toolVersion = '4.9.2'
+	effort = 'max'
+	reportLevel = 'low'
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+	reports {
+		html.required.set(true)
+		xml.required.set(false)
+	}
+}
+
+dependencyCheck {
+	failBuildOnCVSS = 8.0
+	suppressionFile = file("${rootDir}/config/owasp/suppressions.xml")
+}
