@@ -1,28 +1,25 @@
-# Use OpenJDK 21 for building
+# Build stage (Java 21 + Gradle)
 FROM eclipse-temurin:21-jdk-jammy as builder
 
 WORKDIR /app
 
-# Copy Gradle files first (for caching)
-COPY gradlew .
-COPY gradle ./gradle
-COPY build.gradle .
-COPY settings.gradle .
-COPY src ./src
+# Copy files and make gradlew executable
+COPY . .
+RUN chmod +x gradlew  # ← THIS IS CRUCIAL
 
-# Build the app (skip tests for faster builds)
+# Build (skip tests)
 RUN ./gradlew clean build -x test
 
-# Final lightweight image (only JRE)
+# Runtime stage (Lightweight JRE)
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
-# Copy the built JAR
+# Copy built JAR
 COPY --from=builder /app/build/libs/*.jar app.jar
 
-# Set default port (Railway/Render will override)
+# Environment variables
 ENV PORT=8080
 EXPOSE $PORT
 
 # Run the app
-CMD ["sh", "-c", "java -jar app.jar --server.port=${PORT}"]
+CMD ["java", "-jar", "app.jar", "--server.port=${PORT}"]
