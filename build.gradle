@@ -16,6 +16,12 @@ java {
 	}
 }
 
+// Enable toolchain auto-provisioning (Gradle 8.14+)
+tasks.withType(JavaCompile).configureEach {
+	options.fork = true
+	options.forkOptions.jvmArgs.addAll(["--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED"])
+}
+
 configurations {
 	compileOnly {
 		extendsFrom annotationProcessor
