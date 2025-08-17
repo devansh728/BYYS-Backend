@@ -42,8 +42,15 @@ public class User {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    @Column(name = "verified_referrals_count", columnDefinition = "integer default 0")
+    private int verifiedReferralsCount = 0;
+
     @Column(name = "avatar_url")
     private String avatarUrl;
+
+    public void incrementVerifiedReferrals() {
+        this.verifiedReferralsCount++;
+    }
 }
 
 

@@ -27,16 +27,17 @@ public class JwtService {
         this.expirationMinutes = expirationMinutes;
     }
 
-    public String generate(String subject) {
+    public String generate(String subject, String role) {
         Instant now = Instant.now();
         Instant exp = now.plusSeconds(expirationMinutes * 60);
         return Jwts.builder()
-            .subject(subject)
-            .issuer(issuer)
-            .issuedAt(Date.from(now))
-            .expiration(Date.from(exp))
-            .signWith(key)
-            .compact();
+                .subject(subject)
+                .issuer(issuer)
+                .claim("role", role) // Add role claim
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(exp))
+                .signWith(key)
+                .compact();
     }
 
     public JwtVerificationResult verify(String token) {
@@ -44,16 +45,18 @@ public class JwtService {
             var parsed = Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
             String subject = parsed.getPayload().getSubject();
             String tokenIssuer = parsed.getPayload().getIssuer();
+            String role = parsed.getPayload().get("role", String.class); // Extract role
+
             if (!issuer.equals(tokenIssuer)) {
-                return new JwtVerificationResult(false, null);
+                return new JwtVerificationResult(false, null, null);
             }
-            return new JwtVerificationResult(true, subject);
+            return new JwtVerificationResult(true, subject, role);
         } catch (Exception e) {
-            return new JwtVerificationResult(false, null);
+            return new JwtVerificationResult(false, null, null);
         }
     }
 
-    public record JwtVerificationResult(boolean valid, String subject) {}
+    public record JwtVerificationResult(boolean valid, String subject, String role) {}
 }
 
 

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -89,6 +90,19 @@ public class ReferralTrackingService {
         }
     }
 
+    public int getUserRank(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (user.getVerifiedReferralsCount() == 0) {
+            return (int) (userRepository.countByVerifiedReferralsCountGreaterThan(0) + 1);
+        }
+
+        return (int) (userRepository.countByVerifiedReferralsCountGreaterThan(
+                        user.getVerifiedReferralsCount()
+                ) + 1);
+    }
+
     @Transactional
     public void trackVerificationEvent(Long referredUserId) {
         // First verify the user exists
@@ -101,25 +115,27 @@ public class ReferralTrackingService {
                         signupEvent -> {
                             // Verify the referrer exists
                             User referrer = userRepository.findById(signupEvent.getReferrerUserId())
-                                    .orElseThrow(() -> new IllegalStateException("Referrer user not found"));
+                                    .filter(r -> !r.getId().equals(referredUserId))
+                                    .orElseThrow(() -> new IllegalStateException("Invalid referrer"));
 
                             // Prevent self-referral (additional safety check)
                             if (referrer.getId().equals(referredUserId)) {
                                 throw new IllegalStateException("Self-referral detected");
                             }
+                            if (!referralEventRepository.existsByReferredUserIdAndEventType(
+                                    referredUserId, ReferralEventType.VERIFICATION)) {
 
-                            // Create verification event
-                            ReferralEvent event = new ReferralEvent(
-                                    referrer.getId(),
-                                    ReferralEventType.VERIFICATION
-                            );
-                            event.setReferredUserId(referredUserId);
-                            referralEventRepository.save(event);
+                                ReferralEvent event = new ReferralEvent(
+                                        referrer.getId(),
+                                        ReferralEventType.VERIFICATION
+                                );
+                                event.setReferredUserId(referredUserId);
+                                referralEventRepository.save(event);
 
-                            // You could add additional logic here like:
-                            // - Reward the referrer
-                            // - Send notification
-                            // - Update leaderboard cache
+                                // Update referrer's stats if needed
+                                referrer.incrementVerifiedReferrals();
+                                userRepository.save(referrer);
+                            }
                         },
                         () -> log.warn("No signup event found for user {}", referredUserId)
                 );

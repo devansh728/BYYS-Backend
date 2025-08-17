@@ -20,8 +20,9 @@ public interface ReferralEventRepository extends JpaRepository<ReferralEvent, Lo
 
     boolean existsByReferredUserIdAndEventType(Long referredUserId, ReferralEventType eventType);
 
-    Optional<ReferralEvent> findByReferredUserIdAndEventType(Long referredUserId, ReferralEventType eventType);
+    long countByReferrerUserIdAndEventType(Long referrerUserId, ReferralEventType eventType);
 
+    Optional<ReferralEvent> findByReferredUserIdAndEventType(Long referredUserId, ReferralEventType eventType);
     @Query("SELECT r.referrerUserId as referrerUserId, COUNT(r) as totalReferrals " +
             "FROM ReferralEvent r " +
             "WHERE r.eventType = 'VERIFICATION' " +
@@ -40,9 +41,31 @@ public interface ReferralEventRepository extends JpaRepository<ReferralEvent, Lo
             "WHERE r.occurredAt BETWEEN :start AND :end " +
             "GROUP BY r.referrerUserId " +
             "ORDER BY verifications DESC")
-    List<LeaderboardProjection> getLeaderboardStats(@Param("start") Instant start,
+    Page<LeaderboardProjection> getLeaderboardStats(@Param("start") Instant start,
                                                     @Param("end") Instant end,
                                                     Pageable pageable);
+
+    @Query("SELECT r.referrerUserId as userId, COUNT(r) as verifiedCount " +
+            "FROM ReferralEvent r " +
+            "WHERE r.eventType = 'VERIFICATION' " +
+            "GROUP BY r.referrerUserId " +
+            "ORDER BY verifiedCount DESC")
+    List<UserRankProjection> findAllUsersOrderByVerifiedReferrals();
+
+    @Query("SELECT COUNT(DISTINCT r2.referrerUserId) FROM ReferralEvent r2 " +
+            "WHERE r2.eventType = 'VERIFICATION' " +
+            "AND r2.occurredAt BETWEEN :start AND :end " +
+            "AND (SELECT COUNT(DISTINCT r1.referredUserId) FROM ReferralEvent r1 " +
+            "     WHERE r1.eventType = 'VERIFICATION' " +
+            "     AND r1.occurredAt BETWEEN :start AND :end " +
+            "     AND r1.referrerUserId = r2.referrerUserId) > " +
+            "    (SELECT COUNT(DISTINCT r.referredUserId) FROM ReferralEvent r " +
+            "     WHERE r.eventType = 'VERIFICATION' " +
+            "     AND r.occurredAt BETWEEN :start AND :end " +
+            "     AND r.referrerUserId = :userId)")
+    long countUsersAbove(@Param("userId") Long userId,
+                         @Param("start") Instant start,
+                         @Param("end") Instant end);
 
 }
 
@@ -56,4 +79,9 @@ interface LeaderboardProjection {
     Long getTotalReferrals();
     Long getSignups();
     Long getVerifications();
+}
+
+interface UserRankProjection {
+    Long getUserId();
+    Long getVerifiedCount();
 }

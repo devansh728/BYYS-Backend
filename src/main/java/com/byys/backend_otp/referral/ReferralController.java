@@ -3,20 +3,20 @@ package com.byys.backend_otp.referral;
 import com.byys.backend_otp.user.User;
 import com.byys.backend_otp.user.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.constraints.NotBlank;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.*;
 import java.time.temporal.TemporalAdjusters;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -40,6 +40,7 @@ public class ReferralController {
     }
 
     @GetMapping("/share-link")
+    @Transactional
     public ResponseEntity<?> getShareLink(
             @AuthenticationPrincipal UserDetails principal,
             @RequestParam(defaultValue = "https://app.example.com/register") String baseUrl,
@@ -57,6 +58,7 @@ public class ReferralController {
     }
 
     @PostMapping("/track/share")
+    @Transactional
     public ResponseEntity<?> trackShare(
             @AuthenticationPrincipal UserDetails principal,
             @RequestParam(required = false) String source,
@@ -71,10 +73,16 @@ public class ReferralController {
     }
 
     @GetMapping("/track/click")
+    @Transactional
     public ResponseEntity<?> trackClick(
             @RequestParam String code,
             @RequestParam(required = false) String source,
             HttpServletRequest request) {
+
+        // Validate referral code exists
+        if (!userRepository.existsByReferralCode(code)) {
+            return ResponseEntity.badRequest().body("Invalid referral code");
+        }
 
         // 10 clicks per hour per IP
         rateLimitService.checkRateLimit(
@@ -92,6 +100,7 @@ public class ReferralController {
     }
 
     @GetMapping("/history")
+    @Transactional
     public Page<ReferralEvent> getReferralHistory(
             @AuthenticationPrincipal UserDetails principal,
             @RequestParam(defaultValue = "0") int page,
@@ -105,7 +114,8 @@ public class ReferralController {
     }
 
     @GetMapping("/leaderboard/daily")
-    public ResponseEntity<?> getDailyLeaderboard(
+    @Transactional
+    public ResponseEntity<Page<Map<String, Object>>> getDailyLeaderboard(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
@@ -114,13 +124,24 @@ public class ReferralController {
         Instant end = today.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
 
         Pageable pageable = PageRequest.of(page, size);
-        List<LeaderboardProjection> stats = referralEventRepository
+        Page<LeaderboardProjection> statsPage = referralEventRepository
                 .getLeaderboardStats(start, end, pageable);
 
-        return ResponseEntity.ok(enrichWithUserDetails(stats));
+        // Enriches the list of projections
+        List<Map<String, Object>> enrichedStats = enrichWithUserDetails(statsPage.getContent(), start, end);
+
+        // Create a new Page object with the enriched list and the original page metadata
+        Page<Map<String, Object>> enrichedPage = new PageImpl<>(
+                enrichedStats,
+                pageable,
+                statsPage.getTotalElements()
+        );
+
+        return ResponseEntity.ok(enrichedPage);
     }
 
     @GetMapping("/leaderboard/weekly")
+    @Transactional
     public ResponseEntity<?> getWeeklyLeaderboard(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -128,35 +149,141 @@ public class ReferralController {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
 
         LocalDate monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate sunday = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
         Instant start = monday.atStartOfDay().toInstant(ZoneOffset.UTC);
-        Instant end = today.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+        Instant end = sunday.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC);
 
         Pageable pageable = PageRequest.of(page, size);
-        List<LeaderboardProjection> stats = referralEventRepository
+        Page<LeaderboardProjection> statsPage = referralEventRepository
                 .getLeaderboardStats(start, end, pageable);
 
-        return ResponseEntity.ok(enrichWithUserDetails(stats));
+        // Enriches the list of projections
+        List<Map<String, Object>> enrichedStats = enrichWithUserDetails(statsPage.getContent(), start, end);
+
+        // Create a new Page object with the enriched list and the original page metadata
+        Page<Map<String, Object>> enrichedPage = new PageImpl<>(
+                enrichedStats,
+                pageable,
+                statsPage.getTotalElements()
+        );
+
+        return ResponseEntity.ok(enrichedPage);
     }
 
-    private List<Map<String, Object>> enrichWithUserDetails(List<LeaderboardProjection> stats) {
-        return stats.stream().map(stat -> {
-            User user = userRepository.findById(stat.getReferrerUserId())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
+    @GetMapping("/total-referralVer")
+    @Transactional
+    public long getTotalReferralsVerified(@AuthenticationPrincipal UserDetails principal){
+        User user = userRepository.findByPhone(principal.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return referralEventRepository.countVerifiedReferrals(user.getId());
+    }
 
-            return Map.of(
-                    "rank", stats.indexOf(stat) + 1,
-                    "userId", user.getId(),
-                    "name", user.getFullName(),
-                    "avatar", user.getAvatarUrl(),
-                    "referralCode", user.getReferralCode(),
-                    "verifiedReferrals", stat.getVerifications(),
-                    "totalSignups", stat.getSignups(),
-                    "conversionRate", calculateConversionRate(stat.getSignups(), stat.getVerifications())
-            );
-        }).collect(Collectors.toList());
+    @GetMapping("/userStats")
+    @Transactional
+    public ResponseEntity<?> getTotalReferralsSign(@AuthenticationPrincipal UserDetails principal){
+        User user = userRepository.findByPhone(principal.getUsername())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Long referrerUserId = user.getId();
+
+        Long totalReferralsSign = referralEventRepository.countByReferrerUserIdAndEventType(referrerUserId, ReferralEventType.SIGNUP);
+        int userRank = referralTrackingService.getUserRank(referrerUserId);
+        return ResponseEntity.ok(Map.of("totalShares",totalReferralsSign,"currentRank",userRank));
+    }
+
+    @GetMapping("/leaderboard/monthly")
+    @Transactional
+    public ResponseEntity<?> getMonthlyLeaderboard(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        Instant start = today.withDayOfMonth(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+        Instant end = today.plusDays(1).atStartOfDay().toInstant(ZoneOffset.UTC); // Include today
+
+        Pageable pageable = PageRequest.of(page, size);
+        Page<LeaderboardProjection> statsPage = referralEventRepository
+                .getLeaderboardStats(start, end, pageable);
+
+        // Enriches the list of projections
+        List<Map<String, Object>> enrichedStats = enrichWithUserDetails(statsPage.getContent(), start, end);
+
+        // Create a new Page object with the enriched list and the original page metadata
+        Page<Map<String, Object>> enrichedPage = new PageImpl<>(
+                enrichedStats,
+                pageable,
+                statsPage.getTotalElements()
+        );
+
+        return ResponseEntity.ok(enrichedPage);
+    }
+
+    private List<Map<String, Object>> enrichWithUserDetails(List<LeaderboardProjection> stats, Instant start, Instant end) {
+        if (stats == null) {
+            return new ArrayList<>();
+        }
+
+        return stats.stream()
+                .filter(Objects::nonNull)
+                .map(stat -> {
+                    User user = userRepository.findById(stat.getReferrerUserId())
+                            .orElseThrow(() -> new RuntimeException("User not found for ID: " + stat.getReferrerUserId()));
+
+                    // Use a mutable map like HashMap to handle potential null values
+                    Map<String, Object> userDetails = new HashMap<>();
+
+                    long rank = referralEventRepository.countUsersAbove(
+                            stat.getReferrerUserId(),
+                            start,
+                            end
+                    ) + 1;
+
+                    // Add null checks for each value before putting it in the map
+                    userDetails.put("rank", rank);
+                    userDetails.put("userId", user.getId());
+                    userDetails.put("name", user.getFullName());
+
+                    // The following values might be null, so check them
+                    String referralCode = user.getReferralCode();
+                    if (referralCode != null) {
+                        userDetails.put("referralCode", referralCode);
+                    }
+
+                    Long verifications = stat.getVerifications();
+                    if (verifications != null) {
+                        userDetails.put("verifiedReferrals", verifications);
+                    }
+
+                    Long signups = stat.getSignups();
+                    if (signups != null) {
+                        userDetails.put("totalSignups", signups);
+                    }
+
+                    if (signups != null && verifications != null) {
+                        double conversionRate = calculateConversionRate(signups, verifications);
+                        userDetails.put("conversionRate", conversionRate);
+                    }
+
+                    return userDetails;
+                })
+                .collect(Collectors.toList());
     }
 
     private double calculateConversionRate(long signups, long verifications) {
         return signups > 0 ? (verifications * 100.0 / signups) : 0;
+    }
+
+    private Map<String, Object> createLeaderboardResponse(
+            List<Map<String, Object>> enrichedStats,
+            Pageable pageable,
+            long totalElements) {
+
+        return Map.of(
+                "content", enrichedStats,
+                "page", pageable.getPageNumber(),
+                "size", pageable.getPageSize(),
+                "totalElements", totalElements,
+                "totalPages", (int) Math.ceil((double) totalElements / pageable.getPageSize())
+        );
     }
 }

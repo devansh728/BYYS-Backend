@@ -13,7 +13,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByReferralCode(String referralCode);
 
     boolean existsByPhone(String phone);
-
+    long countByVerifiedReferralsCountGreaterThan(int count);
     @Transactional
     @Modifying
     @Query("UPDATE User u SET u.verified = true WHERE u.phone = :phone")
