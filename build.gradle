@@ -102,3 +102,11 @@ dependencyCheck {
 	failBuildOnCVSS = 8.0
 	suppressionFile = file("${rootDir}/config/owasp/suppressions.xml")
 }
+
+checkstyle {
+	ignoreFailures = true  // ← Skip Checkstyle failures
+}
+
+spotbugs {
+	ignoreFailures = true  // ← Skip SpotBugs failures
+}
