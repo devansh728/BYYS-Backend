@@ -1,5 +1,6 @@
 package com.byys.backend_otp.service;
 
+import com.byys.backend_otp.dto.FeedbackRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -62,6 +63,31 @@ public class EmailService {
             mailSender.send(message);
         } catch (MessagingException e) {
             // Log error
+        }
+    }
+
+    @Async
+    public void sendFeedback(FeedbackRequest feedbackRequest) {
+        MimeMessage message = mailSender.createMimeMessage();
+        try {
+            MimeMessageHelper helper = new MimeMessageHelper(message, true);
+            helper.setFrom(fromEmail);
+            helper.setTo(fromEmail);
+            helper.setSubject("New Feedback Received");
+
+            Context context = new Context();
+            context.setVariable("name", feedbackRequest.getName());
+            context.setVariable("email", feedbackRequest.getEmail());
+            context.setVariable("phone", feedbackRequest.getPhone());
+            context.setVariable("subject", feedbackRequest.getSubject());
+            context.setVariable("message", feedbackRequest.getMessage());
+
+            String htmlContent = templateEngine.process("feedback-email", context);
+            helper.setText(htmlContent, true);
+
+            mailSender.send(message);
+        } catch (MessagingException e) {
+            System.err.println("Failed to send feedback email: " + e.getMessage());
         }
     }
 }

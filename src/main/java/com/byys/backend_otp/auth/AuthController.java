@@ -1,5 +1,6 @@
 package com.byys.backend_otp.auth;
 
+import com.byys.backend_otp.dto.FeedbackRequest;
 import com.byys.backend_otp.otp.OtpRateLimitException;
 import com.byys.backend_otp.otp.OtpService;
 import com.byys.backend_otp.referral.ReferralEventRepository;
@@ -176,6 +177,23 @@ public class AuthController {
         });
     }
 
+    @PostMapping("/api/feedback")
+    public ResponseEntity<String> sendFeedback(@RequestBody FeedbackRequest request) {
+        try {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    emailService.sendFeedback(
+                            request
+                    );
+                } catch (Exception e) {
+                    log.error("Email sending failed", e);
+                }
+            });
+            return ResponseEntity.ok("Feedback sent successfully!");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to send feedback.");
+        }
+    }
 
     @PostMapping("/send")
     public ResponseEntity<?> sendOtp(@Valid @RequestBody SendOtpRequest request) {
